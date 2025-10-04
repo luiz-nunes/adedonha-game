@@ -3,6 +3,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from database import get_db, init_db, Room, Player, Answer
 import uuid
 import random
+import os
 from sqlalchemy import delete
 
 app = Flask(__name__)
@@ -904,10 +905,11 @@ def get_room_players(room_id, db):
 
 if __name__ == '__main__':
     import socket
+    port = int(os.environ.get('PORT', 5000))
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
     
     print('🎮 Servidor Adedonha Python + PostgreSQL rodando...')
     print('📍 Acesso local: http://localhost:5000')
     print(f'📍 Acesso na rede: http://{local_ip}:5000')
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+    socketio.run(app, host='0.0.0.0', port=port, debug=False)

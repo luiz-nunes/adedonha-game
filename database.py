@@ -4,21 +4,20 @@ from sqlalchemy.orm import sessionmaker
 import os
 from urllib.parse import quote_plus
 
-# Configuração do banco de dados
-# CONFIGURE SUAS CREDENCIAIS AQUI:
-DB_USER = 'postgres'
-DB_PASSWORD = 'Lcan58495844&'  # Sua senha
-DB_HOST = 'localhost'
-DB_PORT = '5432'
-DB_NAME = 'adedonha'
+# Usar variável de ambiente para DATABASE_URL
+DATABASE_URL = os.environ.get('DATABASE_URL')
 
-# Codificar senha para evitar problemas com caracteres especiais
-password_encoded = quote_plus(DB_PASSWORD)
+if not DATABASE_URL:
+    # Fallback para desenvolvimento local
+    DB_USER = 'postgres'
+    DB_PASSWORD = 'Lcan58495844&'
+    DB_HOST = 'localhost'
+    DB_PORT = '5432'
+    DB_NAME = 'adedonha'
+    password_encoded = quote_plus(DB_PASSWORD)
+    DATABASE_URL = f'postgresql://{DB_USER}:{password_encoded}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
 
-# Construir URL de conexão
-DATABASE_URL = f'postgresql://{DB_USER}:{password_encoded}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
-
-print(f'Conectando ao banco: postgresql://{DB_USER}:***@{DB_HOST}:{DB_PORT}/{DB_NAME}')
+print(f'Conectando ao banco: {DATABASE_URL.split("@")[1] if "@" in DATABASE_URL else "local"}')
 
 # Criar engine
 engine = create_engine(DATABASE_URL, echo=False, client_encoding='utf8')
