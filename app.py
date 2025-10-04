@@ -469,7 +469,7 @@ def handle_stop_game(data):
         for p in current_players:
             all_answers[p.player_id] = [''] * num_categories
         
-        # Preencher com as respostas reais e marcar inválidas automaticamente
+        # Preencher com as respostas reais
         current_letter = room.current_letter
         for ans in round_answers:
             pid = ans.player_id
@@ -478,40 +478,84 @@ def handle_stop_game(data):
                 cat_index = categories_list.index(ans.category)
                 if pid in all_answers:
                     all_answers[pid][cat_index] = ans.answer
-                    
-                    # Marcar como inválida se não começar com a letra correta
-                    if ans.answer and not ans.answer.upper().startswith(current_letter.upper()):
-                        ans.invalidated = True
-                        print(f'❌ Auto-invalidada: "{ans.answer}" não começa com {current_letter}')
             except ValueError:
                 print(f'⚠️ Categoria {ans.category} não encontrada')
         
-        # Salvar as invalidações automáticas
+        # Detectar respostas repetidas por categoria
+        repeated_answers = {}  # {categoria: {resposta_lower: [player_ids]}}
+        for category in categories_list:
+            repeated_answers[category] = {}
+            cat_answers = [a for a in round_answers if a.category == category and a.answer]
+            for ans in cat_answers:
+                answer_lower = ans.answer.lower().strip()
+                if answer_lower not in repeated_answers[category]:
+                    repeated_answers[category][answer_lower] = []
+                repeated_answers[category][answer_lower].append(ans.player_id)
+        
+        # Marcar validações automáticas
+        auto_invalidated = []
+        auto_repeated = []
+        
+        for ans in round_answers:
+            if not ans.answer:
+                continue
+                
+            answer_stripped = ans.answer.strip()
+            answer_lower = answer_stripped.lower()
+            
+            try:
+                cat_index = categories_list.index(ans.category)
+                
+                # 1. Verificar se não começa com a letra correta
+                if not answer_stripped.upper().startswith(current_letter.upper()):
+                    ans.validation_state = 'invalid'
+                    ans.invalidated = True
+                    auto_invalidated.append({
+                        'player_id': ans.player_id,
+                        'category_index': cat_index,
+                        'reason': 'wrong_letter'
+                    })
+                    print(f'❌ Letra errada: "{ans.answer}" não começa com {current_letter}')
+                
+                # 2. Verificar se tem apenas uma letra
+                elif len(answer_stripped) == 1:
+                    ans.validation_state = 'invalid'
+                    ans.invalidated = True
+                    auto_invalidated.append({
+                        'player_id': ans.player_id,
+                        'category_index': cat_index,
+                        'reason': 'too_short'
+                    })
+                    print(f'❌ Muito curta: "{ans.answer}" tem apenas 1 letra')
+                
+                # 3. Verificar se é repetida
+                elif len(repeated_answers[ans.category].get(answer_lower, [])) > 1:
+                    # Não invalida, mas marca como repetida para exibição
+                    auto_repeated.append({
+                        'player_id': ans.player_id,
+                        'category_index': cat_index,
+                        'answer': ans.answer
+                    })
+                    print(f'🔁 Repetida: "{ans.answer}" na categoria {ans.category}')
+                    
+            except ValueError:
+                pass
+        
+        # Salvar as validações automáticas
         db.commit()
         
         all_answers_list = [{'playerId': pid, 'answers': answers} for pid, answers in all_answers.items()]
         
-        # Criar lista de respostas invalidadas automaticamente
-        auto_invalidated = []
-        for ans in round_answers:
-            if ans.invalidated:
-                try:
-                    cat_index = categories_list.index(ans.category)
-                    auto_invalidated.append({
-                        'player_id': ans.player_id,
-                        'category_index': cat_index
-                    })
-                except ValueError:
-                    pass
-        
         print(f'DEBUG - Respostas formatadas: {len(all_answers_list)} jogadores com respostas')
         print(f'DEBUG - Auto-invalidadas: {len(auto_invalidated)} respostas')
+        print(f'DEBUG - Auto-repetidas: {len(auto_repeated)} respostas')
         
         emit('game_stopped', {
             'stopped_by': player_name,
             'player_id': player_id,
             'all_answers': all_answers_list,
-            'auto_invalidated': auto_invalidated
+            'auto_invalidated': auto_invalidated,
+            'auto_repeated': auto_repeated
         }, room=room_id)
         
         print(f'Jogo parado por {player_name} na sala {room_id}')

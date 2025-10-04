@@ -29,6 +29,7 @@
         let answers = [];
         let invalidatedAnswers = new Set();
         let validationStates = new Map();  // Armazena estado de validação: 'valid', 'half', 'invalid'
+        let repeatedAnswers = new Set();  // Armazena respostas repetidas
         let editingCategories = false;
         let tempCategories = [];
 
@@ -198,7 +199,18 @@
                 data.auto_invalidated.forEach(item => {
                     const key = `${item.player_id}-${item.category_index}`;
                     invalidatedAnswers.add(key);
-                    console.log(`  - Invalidada: ${key}`);
+                    validationStates.set(key, 'invalid');
+                    console.log(`  - Invalidada: ${key} (${item.reason})`);
+                });
+            }
+            
+            // Processar respostas repetidas
+            if (data.auto_repeated) {
+                console.log('🔁 Respostas repetidas:', data.auto_repeated.length);
+                data.auto_repeated.forEach(item => {
+                    const key = `${item.player_id}-${item.category_index}`;
+                    repeatedAnswers.add(key);
+                    console.log(`  - Repetida: ${key} (${item.answer})`);
                 });
             }
             
@@ -246,6 +258,7 @@
             allAnswers = [];
             invalidatedAnswers.clear();
             validationStates.clear();
+            repeatedAnswers.clear();
             render();
         });
 
@@ -258,6 +271,7 @@
             allAnswers = [];
             invalidatedAnswers.clear();
             validationStates.clear();
+            repeatedAnswers.clear();
             render();
         });
 
@@ -670,14 +684,22 @@
                     const answer = playerAnswers?.answers[catIndex] || '';
                     const key = `${p.id}-${catIndex}`;
                     const state = validationStates.get(key) || 'valid';
+                    const isRepeated = repeatedAnswers.has(key);
                     
                     // Definir cores e textos baseado no estado
                     let bgColor, textColor, icon, label;
                     if (state === 'valid') {
-                        bgColor = 'bg-green-100 hover:bg-green-200';
-                        textColor = 'text-green-700';
-                        icon = 'fa-check-circle';
-                        label = 'Válida (10pts)';
+                        if (isRepeated) {
+                            bgColor = 'bg-orange-100 hover:bg-orange-200';
+                            textColor = 'text-orange-700';
+                            icon = 'fa-copy';
+                            label = 'Repetida (5pts)';
+                        } else {
+                            bgColor = 'bg-green-100 hover:bg-green-200';
+                            textColor = 'text-green-700';
+                            icon = 'fa-check-circle';
+                            label = 'Válida (10pts)';
+                        }
                     } else if (state === 'half') {
                         bgColor = 'bg-yellow-100 hover:bg-yellow-200';
                         textColor = 'text-yellow-700';
