@@ -413,9 +413,11 @@ python-socketio==5.10.0
 python-engineio==4.8.0
 eventlet==0.33.3
 psycopg2-binary==2.9.9
-SQLAlchemy==2.0.23
+SQLAlchemy==2.0.35
 gunicorn==21.2.0
 ```
+
+**Nota:** SQLAlchemy 2.0.35+ é compatível com Python 3.13 (caso o Render ignore o runtime.txt)
 
 ### 4. Criar `Procfile`
 
@@ -423,11 +425,19 @@ gunicorn==21.2.0
 web: python app.py
 ```
 
-### 5. Criar `runtime.txt`
+### 5. Criar `runtime.txt` e `.python-version`
 
+**runtime.txt:**
 ```
 python-3.11.9
 ```
+
+**.python-version:**
+```
+3.11.9
+```
+
+**Nota:** Alguns serviços leem `.python-version` em vez de `runtime.txt`
 
 ---
 
