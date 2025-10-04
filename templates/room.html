@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sala - Adedonha</title>
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 min-h-screen p-4">
+    <div id="app" class="max-w-6xl mx-auto"></div>
+
+    <script>
+        const socket = io();
+        const roomId = '{{ room_id }}';
+        console.log('Room ID da URL:', roomId);
+        
+        let room = null;
+        let player = null;
+        let gameState = 'waiting';
+        let currentLetter = null;
+        let countdown = null;
+        let categories = [];
+        let players = [];
+        let scores = null;
+        let detailedResults = [];
+        let allAnswers = [];
+        let answers = [];
+        let invalidatedAnswers = new Set();
+        let validationStates = new Map();  // Armazena estado de validação: 'valid', 'half', 'invalid'
+        let editingCategories = false;
+        let tempCategories = [];
+
+        // Carregar dados do sessionStorage
+        const storedRoomData = sessionStorage.getItem('roomData');
+        const storedPlayerData = sessionStorage.getItem('playerData');
+
+        if (storedRoomData && storedPlayerData) {
+            room = JSON.parse(storedRoomData);
+            player = JSON.parse(storedPlayerData);
+            categories = room.categories || [];
+            players = room.players || [];
+            console.log('Dados carregados do storage:', { room, player });
+            console.log('Room ID do objeto room:', room.id);
+            sessionStorage.removeItem('roomData');
+            sessionStorage.removeItem('playerData');
+            render();
+        } else {
+            console.warn('Sem dados no sessionStorage - redirecionando para home');
+            // Se não tem dados, redireciona imediatamente para home
+            alert('Você precisa criar ou entrar em uma sala primeiro.');
+            window.location.href = '/';
+        }
+
+        // Socket events
+        socket.on('connect', () => {
+            console.log('Conectado');
+            // Garantir que está na sala correta do Socket.IO
+            const actualRoomId = room ? room.id : roomId;
+            const playerName = player ? player.name : null;
+            console.log('Entrando na sala Socket.IO:', actualRoomId, 'Player:', playerName);
+            socket.emit('join_socketio_room', { 
+                room_id: actualRoomId,
+                player_name: playerName 
+            });
+        });
+
+        socket.on('room_created', (data) => {
+            console.log('Evento room_created recebido:', data);
+            room = data.room;
+            player = data.player;
+            categories = room.categories;
+            players = room.players;
+            console.log('Room ID após criar:', room.id);
+            render();
+        });
+
+        socket.on('room_joined', (data) => {
+            console.log('Evento room_joined recebido:', data);
+            room = data.room;
+            player = data.player;
+            categories = room.categories;
+            players = room.players;
+            console.log('Room ID após entrar:', room.id);
+            render();
+        });
+
+        socket.on('player_joined', (data) => {
+            players = data.players;
+            render();
+        });
+
+        socket.on('player_reconnected', (data) => {
+            console.log('🔄 Player reconnected:', data);
+            // Atualizar dados do player e room
+            player = data.player;
+            room = data.room;
+            categories = room.categories;
+            players = room.players;
+            console.log('Novo player ID:', player.id);
+            render();
+        });
+
+        socket.on('players_updated', (data) => {
+            console.log('👥 Players updated:', data.players);
+            players = data.players;
+            render();
+        });
+
+        socket.on('player_left', (data) => {
+            players = data.players;
+            render();
+        });
+
+        socket.on('host_changed', (data) => {
+            players = players.map(p => ({
+                ...p,
+                isHost: p.id === data.new_host_id
+            }));
+            if (player && player.id === data.new_host_id) {
+                player.isHost = true;
+            }
+            render();
+        });
+
+        socket.on('categories_updated', (data) => {
+            console.log('Categorias atualizadas:', data.categories);
+            categories = data.categories;
+            if (room) {
+                room.categories = data.categories;
+            }
+            render();
+        });
+
+        let countdownInterval = null;
+        
+        socket.on('round_starting', (data) => {
+            const startTime = new Date();
+            console.log(`🕐 [${startTime.toLocaleTimeString()}.${startTime.getMilliseconds()}] Round starting:`, data);
+            
+            gameState = 'countdown';
+            countdown = data.countdown;
+            
+            // Limpar countdown anterior se existir
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
+            }
+            
+            render();
+            
+            // Fazer countdown no cliente
+            let count = countdown;
+            countdownInterval = setInterval(() => {
+                count--;
+                const now = new Date();
+                console.log(`⏱️ [${now.toLocaleTimeString()}.${now.getMilliseconds()}] Countdown:`, count);
+                
+                if (count > 0) {
+                    countdown = count;
+                    render();
+                } else {
+                    clearInterval(countdownInterval);
+                    countdownInterval = null;
+                    
+                    // Iniciar o jogo após countdown
+                    gameState = 'playing';
+                    currentLetter = data.letter;
+                    categories = data.categories;
+                    countdown = null;
+                    answers = new Array(categories.length).fill('');
+                    
+                    console.log('🎮 Jogo iniciado com letra:', currentLetter);
+                    render();
+                }
+            }, 1000);
+        });
+
+        socket.on('game_stopped', (data) => {
+            console.log('=== GAME STOPPED ===');
+            console.log('Data recebida:', data);
+            console.log('All answers:', data.all_answers);
+            console.log('Players na sala:', players);
+            
+            gameState = 'validation';
+            if (data.all_answers) {
+                allAnswers = data.all_answers;
+                console.log('Total de jogadores com respostas:', allAnswers.length);
+                allAnswers.forEach(a => {
+                    console.log(`  - Player ${a.playerId}: ${a.answers.length} respostas`);
+                });
+            }
+            
+            // Processar respostas auto-invalidadas
+            if (data.auto_invalidated) {
+                console.log('🚫 Respostas auto-invalidadas:', data.auto_invalidated.length);
+                data.auto_invalidated.forEach(item => {
+                    const key = `${item.player_id}-${item.category_index}`;
+                    invalidatedAnswers.add(key);
+                    console.log(`  - Invalidada: ${key}`);
+                });
+            }
+            
+            render();
+        });
+
+        socket.on('answer_invalidated', (data) => {
+            const key = `${data.player_id}-${data.category_index}`;
+            if (data.invalidated) {
+                invalidatedAnswers.add(key);
+            } else {
+                invalidatedAnswers.delete(key);
+            }
+            render();
+        });
+
+        socket.on('answer_validation_changed', (data) => {
+            const key = `${data.player_id}-${data.category_index}`;
+            validationStates.set(key, data.validation_state);
+            
+            // Manter compatibilidade com sistema antigo
+            if (data.invalidated) {
+                invalidatedAnswers.add(key);
+            } else {
+                invalidatedAnswers.delete(key);
+            }
+            
+            render();
+        });
+
+        socket.on('scores_calculated', (data) => {
+            gameState = 'scoring';
+            scores = data.scores;
+            detailedResults = data.detailed_results;
+            players = data.players;
+            allAnswers = data.all_answers;
+            render();
+        });
+
+        socket.on('ready_for_next_round', () => {
+            gameState = 'waiting';
+            currentLetter = null;
+            scores = null;
+            detailedResults = [];
+            allAnswers = [];
+            invalidatedAnswers.clear();
+            validationStates.clear();
+            render();
+        });
+
+        socket.on('match_reset', (data) => {
+            players = data.players;
+            gameState = 'waiting';
+            currentLetter = null;
+            scores = null;
+            detailedResults = [];
+            allAnswers = [];
+            invalidatedAnswers.clear();
+            validationStates.clear();
+            render();
+        });
+
+        socket.on('room_closed', () => {
+            alert('A sala foi fechada pelo anfitrião');
+            window.location.href = '/';
+        });
+
+        socket.on('kicked_from_room', (data) => {
+            alert(data.message);
+            window.location.href = '/';
+        });
+
+        socket.on('player_kicked', (data) => {
+            console.log(`Jogador ${data.player_name} foi expulso da sala`);
+            players = data.players;
+            render();
+        });
+
+        socket.on('error', (data) => {
+            console.error('Erro recebido:', data.message);
+            
+            // Se a sala não foi encontrada e temos dados do storage, significa que o servidor foi reiniciado
+            if (data.message.includes('não encontrada') && room && player) {
+                console.log('Sala não encontrada - servidor pode ter sido reiniciado');
+                alert('A sala não existe mais. Você será redirecionado para criar uma nova sala.');
+                window.location.href = '/';
+            } else {
+                alert(data.message);
+            }
+        });
+
+        // Functions
+        function updateCategories(newCategories) {
+            const actualRoomId = room ? room.id : roomId;
+            console.log('Enviando update_categories com room_id:', actualRoomId);
+            socket.emit('update_categories', { room_id: actualRoomId, categories: newCategories });
+        }
+
+        function startRound() {
+            const actualRoomId = room ? room.id : roomId;
+            socket.emit('start_round', { room_id: actualRoomId });
+        }
+
+        function submitAnswers() {
+            const actualRoomId = room ? room.id : roomId;
+            socket.emit('submit_answers', { room_id: actualRoomId, answers });
+        }
+
+        function stopGame() {
+            submitAnswers();
+            const actualRoomId = room ? room.id : roomId;
+            socket.emit('stop_game', { room_id: actualRoomId });
+        }
+
+        function toggleInvalidate(playerId, categoryIndex) {
+            const actualRoomId = room ? room.id : roomId;
+            socket.emit('invalidate_answer', { 
+                room_id: actualRoomId, 
+                player_id: playerId, 
+                category_index: categoryIndex 
+            });
+        }
+
+        function calculateScores() {
+            const actualRoomId = room ? room.id : roomId;
+            socket.emit('calculate_scores', { room_id: actualRoomId });
+        }
+
+        function nextRound() {
+            const actualRoomId = room ? room.id : roomId;
+            socket.emit('next_round', { room_id: actualRoomId });
+        }
+
+        function newMatch() {
+            const actualRoomId = room ? room.id : roomId;
+            socket.emit('new_match', { room_id: actualRoomId });
+        }
+
+        function closeRoom() {
+            if (confirm('Tem certeza que deseja fechar a sala?')) {
+                const actualRoomId = room ? room.id : roomId;
+                socket.emit('close_room', { room_id: actualRoomId });
+                window.location.href = '/';
+            }
+        }
+
+        function copyRoomLink() {
+            const actualRoomId = room ? room.id : roomId;
+            const link = `${window.location.origin}/room/${actualRoomId}`;
+            navigator.clipboard.writeText(link);
+            alert('Link copiado!');
+        }
+
+        function kickPlayer(playerId, playerName) {
+            if (confirm(`Tem certeza que deseja expulsar ${playerName} da sala?`)) {
+                const actualRoomId = room ? room.id : roomId;
+                socket.emit('kick_player', { 
+                    room_id: actualRoomId,
+                    target_player_id: playerId
+                });
+            }
+        }
+
+        // Função para normalizar texto: remove acentos e converte para maiúsculas
+        function normalizeText(text) {
+            if (!text) return '';
+            return text
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+                .replace(/ç/gi, 'c')              // Substitui ç por c
+                .toUpperCase();                   // Converte para maiúsculas
+        }
+
+        function handleAnswerChange(index, value) {
+            // Normaliza o texto automaticamente
+            const normalized = normalizeText(value);
+            answers[index] = normalized;
+            
+            // Atualiza o campo visual com o texto normalizado
+            const input = document.querySelector(`input[data-index="${index}"]`);
+            if (input && input.value !== normalized) {
+                input.value = normalized;
+            }
+            
+            submitAnswers();
+        }
+
+        function startEditingCategories() {
+            editingCategories = true;
+            tempCategories = [...categories];
+            render();
+        }
+
+        function cancelEditingCategories() {
+            editingCategories = false;
+            tempCategories = [];
+            render();
+        }
+
+        function saveCategories() {
+            const validCategories = tempCategories.filter(c => c.trim() !== '');
+            if (validCategories.length < 3) {
+                alert('Adicione pelo menos 3 categorias');
+                return;
+            }
+            updateCategories(validCategories);
+            editingCategories = false;
+            tempCategories = [];
+        }
+
+        function updateTempCategory(index, value) {
+            tempCategories[index] = value;
+            // Não renderizar para evitar perder o foco do input
+        }
+
+        function removeTempCategory(index) {
+            tempCategories.splice(index, 1);
+            render();
+        }
+
+        function addTempCategory() {
+            tempCategories.push('');
+            render();
+        }
+
+        function renderCategoryEditor() {
+            const categoriesInputs = tempCategories.map((cat, i) => `
+                <div class="flex items-center gap-2">
+                    <input type="text" value="${cat}" 
+                        onchange="updateTempCategory(${i}, this.value)"
+                        onkeyup="updateTempCategory(${i}, this.value)"
+                        placeholder="Nome da categoria..."
+                        class="flex-1 px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all" />
+                    <button onclick="removeTempCategory(${i})" 
+                        class="px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            `).join('');
+
+            return `
+                <div class="space-y-3">
+                    ${categoriesInputs}
+                    <button onclick="addTempCategory()" 
+                        class="w-full px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors flex items-center justify-center gap-2 font-medium">
+                        <i class="fas fa-plus"></i>
+                        Adicionar Categoria
+                    </button>
+                    <div class="flex gap-2 pt-2">
+                        <button onclick="saveCategories()" 
+                            class="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium">
+                            <i class="fas fa-save"></i> Salvar
+                        </button>
+                        <button onclick="cancelEditingCategories()" 
+                            class="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium">
+                            <i class="fas fa-times"></i> Cancelar
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Render functions
+        function render() {
+            const app = document.getElementById('app');
+            
+            console.log('🎨 Renderizando... Estado:', gameState);
+            
+            if (!room || !player) {
+                app.innerHTML = `
+                    <div class="min-h-screen flex items-center justify-center">
+                        <div class="text-center">
+                            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+                            <p class="text-gray-600">Carregando sala...</p>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            if (gameState === 'waiting') {
+                console.log('Renderizando: Waiting Room');
+                app.innerHTML = renderWaitingRoom();
+            } else if (gameState === 'countdown') {
+                console.log('Renderizando: Countdown com valor', countdown);
+                app.innerHTML = renderCountdown();
+            } else if (gameState === 'playing') {
+                console.log('Renderizando: Playing');
+                app.innerHTML = renderGamePlay();
+            } else if (gameState === 'validation') {
+                console.log('Renderizando: Validation');
+                app.innerHTML = renderValidation();
+            } else if (gameState === 'scoring') {
+                console.log('Renderizando: Scoring');
+                app.innerHTML = renderScoreBoard();
+            }
+        }
+
+        function renderWaitingRoom() {
+            const playersHtml = players.map(p => `
+                <div class="${p.id === player.id ? 'bg-purple-50 border-2 border-purple-200' : 'bg-gray-50'} p-3 rounded-lg flex items-center justify-between">
+                    <span class="font-medium text-gray-800">${p.name}</span>
+                    <div class="flex items-center gap-2">
+                        ${p.isHost ? '<span class="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm font-medium">Anfitrião</span>' : ''}
+                        ${p.id === player.id ? '<span class="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm font-medium">Você</span>' : ''}
+                        ${player.isHost && !p.isHost && p.id !== player.id ? `
+                            <button onclick="kickPlayer('${p.id}', '${p.name}')" 
+                                class="px-3 py-1 bg-red-100 text-red-700 hover:bg-red-200 rounded-full text-sm font-medium transition-all">
+                                <i class="fas fa-user-times"></i> Expulsar
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('');
+
+            const categoriesHtml = categories.map(cat => `
+                <div class="p-3 bg-gray-50 rounded-lg">
+                    <span class="text-gray-700">${cat}</span>
+                </div>
+            `).join('');
+
+            return `
+                <div class="text-center mb-8">
+                    <h1 class="text-4xl font-bold text-purple-600 mb-2">Sala de Espera</h1>
+                    <div class="flex items-center justify-center gap-3">
+                        <div class="bg-white rounded-2xl shadow-xl p-6 border border-gray-100 inline-flex items-center gap-2 px-6 py-3">
+                            <span class="text-gray-600">Código:</span>
+                            <span class="text-2xl font-bold text-purple-600">${roomId}</span>
+                            <button onclick="copyRoomLink()" class="ml-2 p-2 hover:bg-purple-50 rounded-lg transition-colors" title="Copiar link">
+                                <i class="fas fa-copy text-purple-600"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-6 mb-8">
+                    <div class="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
+                        <div class="flex items-center gap-2 mb-4">
+                            <i class="fas fa-users text-purple-600"></i>
+                            <h2 class="text-xl font-bold text-gray-800">Jogadores (${players.length})</h2>
+                        </div>
+                        <div class="space-y-2">
+                            ${playersHtml}
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center gap-2">
+                                <i class="fas fa-cog text-purple-600"></i>
+                                <h2 class="text-xl font-bold text-gray-800">Categorias</h2>
+                            </div>
+                            ${player.isHost && !editingCategories ? `
+                                <button onclick="startEditingCategories()" 
+                                    class="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors flex items-center gap-2 text-sm font-medium">
+                                    <i class="fas fa-edit"></i>
+                                    Editar
+                                </button>
+                            ` : ''}
+                        </div>
+                        ${editingCategories ? renderCategoryEditor() : `
+                            <div class="space-y-2">
+                                ${categoriesHtml}
+                            </div>
+                        `}
+                    </div>
+                </div>
+
+                ${player.isHost ? `
+                    <div class="text-center">
+                        <button onclick="startRound()" ${players.length < 2 ? 'disabled' : ''} 
+                            class="bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold py-4 px-12 rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none text-xl flex items-center gap-3 mx-auto">
+                            <i class="fas fa-play"></i>
+                            Iniciar Rodada
+                        </button>
+                        ${players.length < 2 ? '<p class="text-sm text-gray-500 mt-2">Aguarde mais jogadores entrarem na sala</p>' : ''}
+                    </div>
+                ` : ''}
+            `;
+        }
+
+        function renderCountdown() {
+            return `
+                <div class="min-h-screen flex items-center justify-center">
+                    <div class="text-center">
+                        <h2 class="text-3xl font-bold text-gray-700 mb-8">Preparar...</h2>
+                        <div class="text-9xl font-bold text-purple-600 animate-bounce">
+                            ${countdown}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderGamePlay() {
+            const answersHtml = categories.map((cat, i) => `
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">${cat}</label>
+                    <input type="text" value="${answers[i] || ''}" 
+                        data-index="${i}"
+                        oninput="handleAnswerChange(${i}, this.value)"
+                        placeholder="${cat} com ${currentLetter}..."
+                        class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all"
+                        autocomplete="off" />
+                </div>
+            `).join('');
+
+            const playersHtml = players.map(p => `
+                <div class="${p.id === player.id ? 'bg-purple-100 text-purple-800 font-semibold' : 'bg-gray-100 text-gray-700'} px-3 py-1 rounded-full text-sm">
+                    ${p.name}
+                </div>
+            `).join('');
+
+            return `
+                <div class="bg-white rounded-2xl shadow-xl p-6 border border-gray-100 mb-6">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-4">
+                            <div class="text-6xl font-bold text-purple-600 bg-purple-100 w-20 h-20 rounded-2xl flex items-center justify-center shadow-lg">
+                                ${currentLetter}
+                            </div>
+                            <div>
+                                <h2 class="text-2xl font-bold text-gray-800">Letra: ${currentLetter}</h2>
+                                <p class="text-gray-600">Preencha as categorias</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 text-gray-600">
+                            <i class="fas fa-users"></i>
+                            <span>${players.length} jogadores</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-xl p-6 border border-gray-100 mb-6">
+                    <div class="space-y-4">
+                        ${answersHtml}
+                    </div>
+                </div>
+
+                <div class="text-center mb-6">
+                    <button onclick="stopGame()" 
+                        class="bg-gradient-to-r from-red-500 to-pink-500 text-white font-bold py-4 px-8 rounded-xl shadow-lg hover:shadow-2xl transform hover:scale-110 transition-all duration-200 animate-pulse text-2xl">
+                        <i class="fas fa-hand-paper mr-2"></i>
+                        PARE!
+                    </button>
+                    <p class="text-sm text-gray-500 mt-3">Clique quando terminar suas respostas</p>
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
+                    <h3 class="font-semibold text-gray-700 mb-3">Jogadores na partida:</h3>
+                    <div class="flex flex-wrap gap-2">
+                        ${playersHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderValidation() {
+            console.log('=== RENDERIZANDO VALIDAÇÃO ===');
+            console.log('Players:', players);
+            console.log('AllAnswers:', allAnswers);
+            
+            const tableRows = categories.map((cat, catIndex) => {
+                const cells = players.map(p => {
+                    // Procurar respostas deste jogador
+                    const playerAnswers = allAnswers.find(a => a.playerId === p.id);
+                    
+                    console.log(`Procurando respostas para ${p.name} (ID: ${p.id}):`, playerAnswers);
+                    
+                    const answer = playerAnswers?.answers[catIndex] || '';
+                    const key = `${p.id}-${catIndex}`;
+                    const state = validationStates.get(key) || 'valid';
+                    
+                    // Definir cores e textos baseado no estado
+                    let bgColor, textColor, icon, label;
+                    if (state === 'valid') {
+                        bgColor = 'bg-green-100 hover:bg-green-200';
+                        textColor = 'text-green-700';
+                        icon = 'fa-check-circle';
+                        label = 'Válida (10pts)';
+                    } else if (state === 'half') {
+                        bgColor = 'bg-yellow-100 hover:bg-yellow-200';
+                        textColor = 'text-yellow-700';
+                        icon = 'fa-star-half-alt';
+                        label = 'Meio Ponto (5pts)';
+                    } else {
+                        bgColor = 'bg-red-100 hover:bg-red-200';
+                        textColor = 'text-red-700';
+                        icon = 'fa-times-circle';
+                        label = 'Inválida (0pts)';
+                    }
+
+                    return `
+                        <td class="py-3 px-4 text-center">
+                            <div class="space-y-2">
+                                <div class="font-medium ${answer ? 'text-gray-800' : 'text-gray-400'} ${state === 'invalid' ? 'line-through text-red-500' : ''}">
+                                    ${answer || '-'}
+                                </div>
+                                ${answer && player.isHost ? `
+                                    <button onclick="toggleInvalidate('${p.id}', ${catIndex})" 
+                                        class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-all ${bgColor} ${textColor}">
+                                        <i class="fas ${icon}"></i>
+                                        ${label}
+                                    </button>
+                                ` : answer && !player.isHost ? `
+                                    <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${bgColor.replace('hover:bg-', 'bg-').split(' ')[0]} ${textColor}">
+                                        <i class="fas ${icon}"></i>
+                                        ${label}
+                                    </span>
+                                ` : ''}
+                            </div>
+                        </td>
+                    `;
+                }).join('');
+
+                return `
+                    <tr class="border-b border-gray-100">
+                        <td class="py-3 px-4 font-medium text-gray-800">${cat}</td>
+                        ${cells}
+                    </tr>
+                `;
+            }).join('');
+
+            const headerCells = players.map(p => `
+                <th class="text-center py-3 px-4 font-semibold text-gray-700">
+                    ${p.name}${p.id === player.id ? ' <span class="text-purple-600">(Você)</span>' : ''}
+                </th>
+            `).join('');
+
+            return `
+                <div class="text-center mb-8">
+                    <div class="inline-flex items-center gap-2 bg-yellow-100 text-yellow-800 px-6 py-3 rounded-full mb-4">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <span class="font-semibold">Validação de Respostas</span>
+                    </div>
+                    <h1 class="text-4xl font-bold text-purple-600 mb-2">Letra: ${currentLetter}</h1>
+                    <p class="text-gray-600">Marque as respostas inválidas antes de calcular a pontuação</p>
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-xl p-6 border border-gray-100 mb-6 overflow-x-auto">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="border-b-2 border-gray-200">
+                                <th class="text-left py-3 px-4 font-semibold text-gray-700">Categoria</th>
+                                ${headerCells}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="bg-blue-50 border-2 border-blue-200 rounded-2xl p-6 mb-6">
+                    <div class="flex items-start gap-3">
+                        <i class="fas fa-info-circle text-blue-600 mt-1"></i>
+                        <div>
+                            <h3 class="font-semibold text-blue-900 mb-1">Como funciona:</h3>
+                            <ul class="text-sm text-blue-800 space-y-1">
+                                <li>• <strong>Apenas o criador da sala</strong>(anfitrião) pode marcar respostas como inválidas</li>
+                                <li>• Respostas inválidas não pontuarão</li>
+                                <li>• Clique nos botões verde/vermelho para validar/invalidar</li>
+                                <li>• Após validar todas as respostas, clique em "Calcular Pontuação"</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                ${player.isHost ? `
+                    <div class="text-center">
+                        <button onclick="calculateScores()" 
+                            class="bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold py-4 px-12 rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 text-xl">
+                            Calcular Pontuação
+                        </button>
+                    </div>
+                ` : `
+                    <div class="text-center text-gray-600">
+                        Aguardando o anfitrião calcular a pontuação...
+                    </div>
+                `}
+            `;
+        }
+
+        function renderScoreBoard() {
+            const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
+
+            const podiumHtml = sortedPlayers.slice(0, 3).map((p, i) => `
+                <div class="text-center ${i === 0 ? 'transform scale-110' : ''}">
+                    ${i === 0 ? '<i class="fas fa-crown text-yellow-500 text-3xl absolute -top-6 left-1/2 transform -translate-x-1/2"></i>' : ''}
+                    <div class="relative w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold ${
+                        i === 0 ? 'bg-gradient-to-br from-yellow-400 to-yellow-600 text-white' :
+                        i === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-500 text-white' :
+                        'bg-gradient-to-br from-orange-400 to-orange-600 text-white'
+                    }">
+                        ${i + 1}º
+                    </div>
+                    <p class="font-semibold text-gray-800 mt-2">${p.name}</p>
+                    <p class="text-2xl font-bold text-purple-600">${p.score} pts</p>
+                </div>
+            `).join('');
+
+            const tableRows = categories.map((cat, catIndex) => {
+                const cells = players.map(p => {
+                    const playerAnswers = allAnswers.find(a => a.playerId === p.id);
+                    const answer = playerAnswers?.answers[catIndex] || '';
+                    const result = detailedResults.find(r => r.playerId === p.id && r.category === cat);
+                    
+                    const getLabel = (reason) => {
+                        if (reason === 'unique') return '✓ Única';
+                        if (reason === 'repeated') return '½ Repetida';
+                        if (reason === 'half_point') return '⭐ Meio Ponto';
+                        if (reason === 'invalidated') return '✗ Invalidada';
+                        if (reason === 'wrong_letter') return '✗ Letra errada';
+                        return '✗ Vazia';
+                    };
+
+                    const getColor = (points) => {
+                        if (points === 10) return 'text-green-600 bg-green-50';
+                        if (points === 5) return 'text-yellow-600 bg-yellow-50';
+                        return 'text-red-600 bg-red-50';
+                    };
+
+                    return `
+                        <td class="py-3 px-4 text-center">
+                            <div class="space-y-1">
+                                <div class="font-medium ${answer ? 'text-gray-800' : 'text-gray-400'}">
+                                    ${answer || '-'}
+                                </div>
+                                ${result ? `
+                                    <div class="text-xs px-2 py-1 rounded-full inline-block ${getColor(result.points)}">
+                                        ${getLabel(result.reason)}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </td>
+                    `;
+                }).join('');
+
+                return `
+                    <tr class="border-b border-gray-100">
+                        <td class="py-3 px-4 font-medium text-gray-800">${cat}</td>
+                        ${cells}
+                    </tr>
+                `;
+            }).join('');
+
+            const headerCells = players.map(p => `
+                <th class="text-center py-3 px-4 font-semibold text-gray-700">
+                    ${p.name}${p.id === player.id ? ' <span class="text-purple-600">(Você)</span>' : ''}
+                </th>
+            `).join('');
+
+            const scoreCells = players.map(p => `
+                <td class="py-3 px-4 text-center text-purple-600 text-lg font-bold">
+                    +${scores[p.id] || 0}
+                </td>
+            `).join('');
+
+            const rankingHtml = sortedPlayers.map((p, i) => `
+                <div class="${p.id === player.id ? 'bg-purple-50 border-2 border-purple-200' : 'bg-gray-50'} flex items-center justify-between p-4 rounded-lg">
+                    <div class="flex items-center gap-4">
+                        <span class="text-2xl font-bold text-gray-400 w-8">${i + 1}º</span>
+                        <span class="font-semibold text-gray-800 text-lg">${p.name}</span>
+                        ${p.id === player.id ? '<span class="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm font-medium">Você</span>' : ''}
+                    </div>
+                    <span class="text-2xl font-bold text-purple-600">${p.score} pts</span>
+                </div>
+            `).join('');
+
+            return `
+                <div class="text-center mb-8">
+                    <h1 class="text-4xl font-bold text-purple-600 mb-6">Pontuação da Rodada</h1>
+                    
+                    <div class="bg-white rounded-2xl shadow-xl p-6 border border-gray-100 mb-6">
+                        <div class="flex items-center justify-center gap-8">
+                            ${podiumHtml}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-xl p-6 border border-gray-100 mb-6 overflow-x-auto">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                        <i class="fas fa-star text-purple-600"></i>
+                        Respostas - Letra ${currentLetter}
+                    </h2>
+                    <table class="w-full">
+                        <thead>
+                            <tr class="border-b-2 border-gray-200">
+                                <th class="text-left py-3 px-4 font-semibold text-gray-700">Categoria</th>
+                                ${headerCells}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                            <tr class="bg-purple-50 font-bold">
+                                <td class="py-3 px-4 text-gray-800">Pontos desta rodada</td>
+                                ${scoreCells}
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-xl p-6 border border-gray-100 mb-6">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                        <i class="fas fa-trophy text-purple-600"></i>
+                        Ranking Geral
+                    </h2>
+                    <div class="space-y-2">
+                        ${rankingHtml}
+                    </div>
+                </div>
+
+                ${player.isHost ? `
+                    <div class="space-y-4">
+                        <div class="text-center">
+                            <button onclick="nextRound()" 
+                                class="bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold py-4 px-12 rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 text-xl flex items-center gap-3 mx-auto">
+                                Próxima Rodada
+                                <i class="fas fa-arrow-right"></i>
+                            </button>
+                        </div>
+                        <div class="flex justify-center gap-4">
+                            <button onclick="newMatch()" 
+                                class="bg-white text-purple-600 font-semibold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 border-2 border-purple-200 flex items-center gap-2">
+                                <i class="fas fa-redo"></i>
+                                Nova Partida (Zerar Placar)
+                            </button>
+                            <button onclick="closeRoom()" 
+                                class="bg-red-500 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-red-600 transition-all duration-200 flex items-center gap-2">
+                                <i class="fas fa-times-circle"></i>
+                                Fechar Sala
+                            </button>
+                        </div>
+                    </div>
+                ` : `
+                    <div class="text-center text-gray-600">
+                        Aguardando o anfitrião iniciar a próxima rodada...
+                    </div>
+                `}
+            `;
+        }
+
+        // Initial render
+        render();
+    </script>
+</body>
+</html>

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adedonha Multiplayer - Python</title>
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 min-h-screen">
+    <div class="min-h-screen flex items-center justify-center p-4">
+        <div class="max-w-md w-full">
+            <!-- Header -->
+            <div class="text-center mb-8">
+                <div class="flex items-center justify-center mb-4">
+                    <i class="fas fa-gamepad text-6xl text-purple-600"></i>
+                </div>
+                <h1 class="text-5xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-2">
+                    Adedonha
+                </h1>
+                <p class="text-gray-600 text-lg">Jogue Adedonha online com seus amigos!</p>
+                
+                <!-- Status de conexão -->
+                <div class="mt-4">
+                    <span id="connection-status" class="inline-flex items-center gap-2 text-gray-600 text-sm">
+                        <span class="w-2 h-2 bg-gray-400 rounded-full"></span>
+                        Conectando...
+                    </span>
+                </div>
+            </div>
+
+            <!-- Card Principal -->
+            <div class="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
+                <!-- Nome do Jogador -->
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Seu Nome
+                    </label>
+                    <input
+                        type="text"
+                        id="player-name"
+                        placeholder="Digite seu nome"
+                        class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all"
+                        maxlength="20"
+                    />
+                </div>
+
+                <!-- Botões de Ação -->
+                <div id="main-buttons" class="space-y-3">
+                    <button
+                        onclick="createRoom()"
+                        class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold py-3 px-6 rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center justify-center gap-2"
+                    >
+                        <i class="fas fa-plus"></i>
+                        Criar Nova Sala
+                    </button>
+
+                    <button
+                        onclick="showJoinRoom()"
+                        class="w-full bg-white text-purple-600 font-semibold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transform hover:scale-105 transition-all duration-200 border-2 border-purple-200 flex items-center justify-center gap-2"
+                    >
+                        <i class="fas fa-sign-in-alt"></i>
+                        Entrar em uma Sala
+                    </button>
+                </div>
+
+                <!-- Form Entrar na Sala (oculto inicialmente) -->
+                <div id="join-room-form" class="space-y-3 hidden">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Código da Sala
+                        </label>
+                        <input
+                            type="text"
+                            id="room-code"
+                            placeholder="Ex: ABC12345"
+                            class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all uppercase"
+                            maxlength="8"
+                        />
+                    </div>
+
+                    <button
+                        onclick="joinRoom()"
+                        class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold py-3 px-6 rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center justify-center gap-2"
+                    >
+                        <i class="fas fa-users"></i>
+                        Entrar na Sala
+                    </button>
+
+                    <button
+                        onclick="showMainButtons()"
+                        class="w-full bg-white text-purple-600 font-semibold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 border-2 border-purple-200"
+                    >
+                        Voltar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="text-center mt-6 text-lg text-gray-500">
+                <p>Jogo multiplayer em tempo real</p>                
+            </div>
+            <div class="text-center mt-2 text-sm text-gray-500">                
+                <p>Luiz Nunes - Webdev</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let connected = false;
+
+        socket.on('connect', () => {
+            connected = true;
+            updateConnectionStatus(true);
+            console.log('Conectado ao servidor');
+        });
+
+        socket.on('disconnect', () => {
+            connected = false;
+            updateConnectionStatus(false);
+            console.log('Desconectado do servidor');
+        });
+
+        socket.on('room_created', (data) => {
+            console.log('Sala criada:', data);
+            console.log('Room ID:', data.room_id);
+            sessionStorage.setItem('roomData', JSON.stringify(data.room));
+            sessionStorage.setItem('playerData', JSON.stringify(data.player));
+            // Usar o room_id correto do retorno
+            const roomId = data.room_id || data.room.id;
+            window.location.href = `/room/${roomId}`;
+        });
+
+        socket.on('room_joined', (data) => {
+            console.log('Entrou na sala:', data);
+            console.log('Room ID:', data.room_id);
+            sessionStorage.setItem('roomData', JSON.stringify(data.room));
+            sessionStorage.setItem('playerData', JSON.stringify(data.player));
+            // Usar o room_id correto do retorno
+            const roomId = data.room_id || data.room.id;
+            window.location.href = `/room/${roomId}`;
+        });
+
+        socket.on('error', (data) => {
+            alert(data.message);
+        });
+
+        function updateConnectionStatus(isConnected) {
+            const statusEl = document.getElementById('connection-status');
+            if (isConnected) {
+                statusEl.innerHTML = '<span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Conectado';
+                statusEl.className = 'inline-flex items-center gap-2 text-green-600 text-sm';
+            } else {
+                statusEl.innerHTML = '<span class="w-2 h-2 bg-red-500 rounded-full"></span> Desconectado';
+                statusEl.className = 'inline-flex items-center gap-2 text-red-600 text-sm';
+            }
+        }
+
+        function createRoom() {
+            const playerName = document.getElementById('player-name').value.trim();
+            
+            if (!playerName) {
+                alert('Por favor, digite seu nome!');
+                return;
+            }
+
+            if (!connected) {
+                alert('Conectando ao servidor...');
+                return;
+            }
+
+            socket.emit('create_room', { player_name: playerName });
+        }
+
+        function joinRoom() {
+            const playerName = document.getElementById('player-name').value.trim();
+            const roomCode = document.getElementById('room-code').value.trim().toUpperCase();
+            
+            if (!playerName) {
+                alert('Por favor, digite seu nome!');
+                return;
+            }
+
+            if (!roomCode) {
+                alert('Por favor, digite o código da sala!');
+                return;
+            }
+
+            if (!connected) {
+                alert('Conectando ao servidor...');
+                return;
+            }
+
+            socket.emit('join_room', { 
+                room_id: roomCode, 
+                player_name: playerName 
+            });
+        }
+
+        function showJoinRoom() {
+            document.getElementById('main-buttons').classList.add('hidden');
+            document.getElementById('join-room-form').classList.remove('hidden');
+        }
+
+        function showMainButtons() {
+            document.getElementById('join-room-form').classList.add('hidden');
+            document.getElementById('main-buttons').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
