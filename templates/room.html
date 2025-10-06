@@ -361,7 +361,7 @@
 
         function copyRoomLink() {
             const actualRoomId = room ? room.id : roomId;
-            const link = `${window.location.origin}/room/${actualRoomId}`;
+            const link = `${actualRoomId}`;
             navigator.clipboard.writeText(link);
             alert('Link copiado!');
         }
