@@ -7,16 +7,27 @@
     <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        @keyframes pulseColor {
+            0%, 100% { background-color: #6b21a8; transform: scale(1); }
+            50% { background-color: #f43f5e; transform: scale(1.2); }
+        }
+    
+        .chat-notify {
+            animation: pulseColor 1s infinite;
+        }
+    </style>
 </head>
 <body class="bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 min-h-screen p-4">
     <div id="app" class="max-w-6xl mx-auto"></div>
 
     <!-- CHAT --><!-- BOTÃO DE CHAT FLUTUANTE -->
     <button id="open-chat-btn"
-        class="fixed bottom-6 right-6 bg-purple-600 text-white p-4 rounded-full shadow-lg hover:bg-purple-700 transition-all z-50">
-    💬
+        class="fixed bottom-6 right-6 bg-purple-600 text-white p-4 rounded-full shadow-lg hover:scale-110 transition duration-300">
+        <i class="fas fa-comments text-2xl"></i>
     </button>
-
+    
     <!-- POP-UP DE CHAT -->
     <div id="chat-popup" class="hidden fixed bottom-20 right-6 w-80 h-96 bg-white rounded-2xl shadow-xl border border-gray-200 z-50 flex flex-col overflow-hidden">
         <div class="flex items-center justify-between p-3 bg-purple-600 text-white">
@@ -1076,15 +1087,25 @@
         
         // Receber mensagens dos outros jogadores
         socket.on('chat_message_broadcast', data => {
-            if (data.player_name === player_name) return;
+        if (data.player_name === player_name) return;
             addChatMessage(data.player_name, data.message, false);
+
+            // 🔔 Se o chat estiver fechado, adiciona efeito ao botão
+            if (chatPopup.classList.contains('hidden')) {
+                openBtn.classList.add('chat-notify');
+            }
         });
+
 
         // ABRIR E FECHAR POP-UP
         const chatPopup = document.getElementById('chat-popup');
         const openBtn = document.getElementById('open-chat-btn');
         const closeBtn = document.getElementById('close-chat-btn');
-        openBtn.addEventListener('click', () => chatPopup.classList.remove('hidden'));
+        openBtn.addEventListener('click', () => {
+            chatPopup.classList.remove('hidden');
+            // 🔔 Remove efeito de notificação quando abrir
+            openBtn.classList.remove('chat-notify');
+        });
         closeBtn.addEventListener('click', () => chatPopup.classList.add('hidden'));
         
         
