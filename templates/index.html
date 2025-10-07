@@ -125,10 +125,12 @@
 
         socket.on('room_created', (data) => {
             console.log('Sala criada:', data);
-            console.log('Room ID:', data.room_id);
             sessionStorage.setItem('roomData', JSON.stringify(data.room));
             sessionStorage.setItem('playerData', JSON.stringify(data.player));
-            // Usar o room_id correto do retorno
+            // GARANTIA: atualiza também localStorage com o nome retornado pelo servidor
+            if (data.player && data.player.name) {
+                localStorage.setItem('player_name', data.player.name);
+            }
             const roomId = data.room_id || data.room.id;
             window.location.href = `/room/${roomId}`;
         });
@@ -138,9 +140,15 @@
             console.log('Room ID:', data.room_id);
             sessionStorage.setItem('roomData', JSON.stringify(data.room));
             sessionStorage.setItem('playerData', JSON.stringify(data.player));
+
+            if (data.player && data.player.name) {
+                localStorage.setItem('player_name', data.player.name);
+            }
             // Usar o room_id correto do retorno
             const roomId = data.room_id || data.room.id;
             window.location.href = `/room/${roomId}`;
+            //player_name = document.getElementById("playerNameInput").value.trim();
+            //localStorage.setItem("player_name", player_name);
         });
 
         socket.on('error', (data) => {
@@ -160,7 +168,7 @@
 
         function createRoom() {
             const playerName = document.getElementById('player-name').value.trim();
-            
+
             if (!playerName) {
                 alert('Por favor, digite seu nome!');
                 return;
@@ -171,13 +179,20 @@
                 return;
             }
 
+            // Salva NO localStorage ANTES de emitir (garante que a aba/cliente atual tem o nome correto)
+            localStorage.setItem('player_name', playerName);
+            // opcional: também salvar no sessionStorage por aba (se quiser comportamento por aba)
+            // sessionStorage.setItem('player_name', playerName);
+
+            // Agora emite para o servidor
             socket.emit('create_room', { player_name: playerName });
         }
+
 
         function joinRoom() {
             const playerName = document.getElementById('player-name').value.trim();
             const roomCode = document.getElementById('room-code').value.trim().toUpperCase();
-            
+
             if (!playerName) {
                 alert('Por favor, digite seu nome!');
                 return;
@@ -193,11 +208,16 @@
                 return;
             }
 
+            // Salva o nome ANTES de emitir
+            localStorage.setItem('player_name', playerName);
+            // sessionStorage.setItem('player_name', playerName); // opcional, por aba
+
             socket.emit('join_room', { 
                 room_id: roomCode, 
                 player_name: playerName 
             });
         }
+
 
         function showJoinRoom() {
             document.getElementById('main-buttons').classList.add('hidden');

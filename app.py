@@ -43,7 +43,7 @@ def handle_connect():
 @socketio.on('join_socketio_room')
 def handle_join_socketio_room(data):
     room_id = data.get('room_id')
-    player_name = data.get('player_name')  # Nome do jogador para identificação
+    player_name = data.get('player_name', 'Anônimo')  # Nome do jogador para identificação
     
     if room_id:
         db = get_db()
@@ -904,6 +904,18 @@ def handle_close_room(data):
     finally:
         db.close()
 
+@socketio.on('send_chat_message')
+def handle_send_chat_message(data):
+    room_id = data.get('room_id')
+    player_name = data.get('player_name')
+    message = data.get('message')
+
+    if room_id and message:
+        emit('chat_message_broadcast', {
+            'player_name': player_name,
+            'message': message
+        }, room=room_id, include_self=False)        
+
 # ==================== HELPER FUNCTIONS ====================
 
 def get_player_data(player_id, db):
@@ -946,24 +958,6 @@ def get_room_players(room_id, db):
         })
     
     return players_list
-
-@socketio.on('send_chat_message')
-def handle_chat_message(data):
-    """Recebe uma mensagem de chat de um jogador e retransmite para a sala"""
-    room_id = data.get('room_id')
-    player_name = data.get('player_name')
-    message = data.get('message')
-
-    if not room_id or not message:
-        return
-    
-    # Enviar a mensagem para todos na sala
-    emit('chat_message_broadcast', {
-        'player_name': player_name,
-        'message': message
-    }, room=room_id)
-    
-    print(f'💬 [{room_id}] {player_name}: {message}')
 
 if __name__ == '__main__':
     import socket

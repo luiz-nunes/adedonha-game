@@ -88,7 +88,7 @@
         });
 
         socket.on('player_joined', (data) => {
-            players = data.players;
+            players = data.players;            
             render();
         });
 
@@ -496,7 +496,7 @@
 
             if (gameState === 'waiting') {
                 console.log('Renderizando: Waiting Room');
-                app.innerHTML = renderWaitingRoom();
+                app.innerHTML = renderWaitingRoom();                
             } else if (gameState === 'countdown') {
                 console.log('Renderizando: Countdown com valor', countdown);
                 app.innerHTML = renderCountdown();
@@ -542,13 +542,13 @@
                         <div class="bg-white rounded-2xl shadow-xl p-6 border border-gray-100 inline-flex items-center gap-2 px-6 py-3">
                             <span class="text-gray-600">Código:</span>
                             <span class="text-2xl font-bold text-purple-600">${roomId}</span>
-                            <button onclick="copyRoomLink()" class="ml-2 p-2 hover:bg-purple-50 rounded-lg transition-colors" title="Copiar sala">
+                            <button onclick="copyRoomLink()" class="ml-2 p-2 hover:bg-purple-50 rounded-lg transition-colors" title="Copiar link">
                                 <i class="fas fa-copy text-purple-600"></i>
                             </button>
                         </div>
                     </div>
                 </div>
-
+                
                 <div class="grid md:grid-cols-2 gap-6 mb-8">
                     <div class="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
                         <div class="flex items-center gap-2 mb-4">
@@ -967,47 +967,96 @@
         render();
     </script>
 
-    <div id="chat-container" style="border:1px solid #ccc; width:300px; height:300px; overflow-y:auto; padding:8px; margin-top:10px;">
+    <!-- CHAT SIMPLES E FUNCIONAL -->
+    <div id="chat-container" style="border:1px solid #ccc; width:300px; height:300px; overflow-y:auto; padding:8px; margin-top:10px; border-radius:8px; background-color:#fafafa;">
     </div>
-    <input type="text" id="chat-input" placeholder="Digite sua mensagem..." style="width:220px;">
-    <button onclick="sendChatMessage()">Enviar</button>
+
+    <div style="margin-top:6px;">
+    <input type="text" id="chat-input" placeholder="Digite sua mensagem..." style="width:220px; padding:4px; border-radius:4px; border:1px solid #ccc;">
+    <button id="chat-send-btn" style="padding:5px 10px; background-color:#6b21a8; color:white; border:none; border-radius:4px;">Enviar</button>
+    </div>
 
     <script>
-        const socket = io();
+        // ⚙️ REUTILIZA O SOCKET EXISTENTE
+        
+        if (window.socket) {
+            socket = window.socket; // já existe, reutiliza o mesmo
+        } else {
+            let socket = io(); // cria novo se ainda não existir
+            window.socket = socket;
+        }
+            
         const room_id = "{{ room_id }}";
-        const player_name = localStorage.getItem('player_name') || "Anônimo"; // Ou outra forma de pegar o nome
-
-        // Entrar na sala Socket.IO se ainda não estiver
+        player_name = null;
+        const storedPlayer = sessionStorage.getItem('playerData');
+        if (storedPlayer) {
+            try { player_name = JSON.parse(storedPlayer).name; } catch(e) {}
+        }
+        if (!player_name) {
+            player_name = localStorage.getItem('player_name') || "Anônimo";
+        }
+        
+        // Força sincronizar o nome do jogador com o que foi salvo anteriormente
+        //player_name = localStorage.getItem('player_name');
+        /*if (!player_name || player_name === "Anônimo") {
+            // tenta recuperar de outra variável global, se existir
+            if (window.currentPlayer && window.currentPlayer.name) {
+                player_name = window.currentPlayer.name;
+                localStorage.setItem('player_name', player_name);
+            } else {
+                player_name = prompt("Digite seu nome para o chat:") || "Anônimo";
+                localStorage.setItem('player_name', player_name);
+            }
+        }*/
+        console.log(`👤 Nome do jogador: ${player_name}`);
+        // Entrar na sala via Socket.IO
         socket.emit('join_socketio_room', { room_id, player_name });
-
-        // Receber mensagens do chat
-        socket.on('chat_message_broadcast', data => {
+    
+        // Função para adicionar mensagens ao chat
+        function addChatMessage(name, message, isSelf = false) {
             const box = document.getElementById('chat-container');
-            const msgElem = document.createElement('p');
-            msgElem.innerHTML = `<b>${data.player_name}:</b> ${data.message}`;
+            const msgElem = document.createElement('div');
+            msgElem.style.margin = '4px 0';
+            msgElem.style.padding = '6px 8px';
+            msgElem.style.borderRadius = '6px';
+            msgElem.style.maxWidth = '80%';
+            msgElem.style.wordWrap = 'break-word';
+            msgElem.style.backgroundColor = isSelf ? '#e9d5ff' : '#f3f4f6';
+            msgElem.style.alignSelf = isSelf ? 'flex-end' : 'flex-start';
+            msgElem.style.textAlign = isSelf ? 'right' : 'left';
+            msgElem.innerHTML = `<b>${name}:</b> ${message}`;
             box.appendChild(msgElem);
             box.scrollTop = box.scrollHeight;
-        });
-
+        }
+    
         // Enviar mensagem
         function sendChatMessage() {
             const input = document.getElementById('chat-input');
             const msg = input.value.trim();
-            if (msg) {
-                socket.emit('send_chat_message', {
-                    room_id,
-                    player_name,
-                    message: msg
-                });
-                input.value = '';
-            }
+            if (!msg) return;
+    
+            socket.emit('send_chat_message', {
+                room_id,
+                player_name,
+                message: msg
+            });
+    
+            addChatMessage(player_name, msg, true);
+            input.value = '';
         }
-
+    
+        // Botão de envio
+        document.getElementById('chat-send-btn').addEventListener('click', sendChatMessage);
+    
         // Enviar com Enter
         document.getElementById('chat-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendChatMessage();
-            }
+            if (e.key === 'Enter') sendChatMessage();
+        });
+    
+        // Receber mensagens dos outros jogadores
+        socket.on('chat_message_broadcast', data => {
+            if (data.player_name === player_name) return;
+            addChatMessage(data.player_name, data.message, false);
         });
     </script>
 </body>
