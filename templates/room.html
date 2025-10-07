@@ -11,10 +11,31 @@
 <body class="bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 min-h-screen p-4">
     <div id="app" class="max-w-6xl mx-auto"></div>
 
+    <!-- CHAT --><!-- BOTÃO DE CHAT FLUTUANTE -->
+    <button id="open-chat-btn"
+        class="fixed bottom-6 right-6 bg-purple-600 text-white p-4 rounded-full shadow-lg hover:bg-purple-700 transition-all z-50">
+    💬
+    </button>
+
+    <!-- POP-UP DE CHAT -->
+    <div id="chat-popup" class="hidden fixed bottom-20 right-6 w-80 h-96 bg-white rounded-2xl shadow-xl border border-gray-200 z-50 flex flex-col overflow-hidden">
+        <div class="flex items-center justify-between p-3 bg-purple-600 text-white">
+            <span class="font-semibold">Chat</span>
+            <button id="close-chat-btn" class="hover:text-gray-200">&times;</button>
+        </div>
+
+        <div id="chat-container" class="flex-1 p-3 overflow-y-auto bg-gray-50"></div>
+
+        <div class="p-3 flex gap-2 border-t border-gray-200">
+            <input type="text" id="chat-input" placeholder="Digite sua mensagem..." class="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-200">
+            <button id="chat-send-btn" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700">Enviar</button>
+        </div>
+    </div>
+
     <script>
         const socket = io();
         const roomId = '{{ room_id }}';
-        console.log('Room ID da URL:', roomId);
+        //console.log('Room ID da URL:', roomId);
         
         let room = null;
         let player = null;
@@ -42,13 +63,13 @@
             player = JSON.parse(storedPlayerData);
             categories = room.categories || [];
             players = room.players || [];
-            console.log('Dados carregados do storage:', { room, player });
-            console.log('Room ID do objeto room:', room.id);
+            //console.log('Dados carregados do storage:', { room, player });
+            //console.log('Room ID do objeto room:', room.id);
             sessionStorage.removeItem('roomData');
             sessionStorage.removeItem('playerData');
             render();
         } else {
-            console.warn('Sem dados no sessionStorage - redirecionando para home');
+            //console.warn('Sem dados no sessionStorage - redirecionando para home');
             // Se não tem dados, redireciona imediatamente para home
             alert('Você precisa criar ou entrar em uma sala primeiro.');
             window.location.href = '/';
@@ -56,7 +77,7 @@
 
         // Socket events
         socket.on('connect', () => {
-            console.log('Conectado');
+            //console.log('Conectado');
             // Garantir que está na sala correta do Socket.IO
             const actualRoomId = room ? room.id : roomId;
             const playerName = player ? player.name : null;
@@ -138,7 +159,7 @@
         
         socket.on('round_starting', (data) => {
             const startTime = new Date();
-            console.log(`🕐 [${startTime.toLocaleTimeString()}.${startTime.getMilliseconds()}] Round starting:`, data);
+            //console.log(`🕐 [${startTime.toLocaleTimeString()}.${startTime.getMilliseconds()}] Round starting:`, data);
             
             gameState = 'countdown';
             countdown = data.countdown;
@@ -156,7 +177,7 @@
             countdownInterval = setInterval(() => {
                 count--;
                 const now = new Date();
-                console.log(`⏱️ [${now.toLocaleTimeString()}.${now.getMilliseconds()}] Countdown:`, count);
+                //console.log(`⏱️ [${now.toLocaleTimeString()}.${now.getMilliseconds()}] Countdown:`, count);
                 
                 if (count > 0) {
                     countdown = count;
@@ -172,17 +193,17 @@
                     countdown = null;
                     answers = new Array(categories.length).fill('');
                     
-                    console.log('🎮 Jogo iniciado com letra:', currentLetter);
+                    //console.log('🎮 Jogo iniciado com letra:', currentLetter);
                     render();
                 }
             }, 1000);
         });
 
         socket.on('game_stopped', (data) => {
-            console.log('=== GAME STOPPED ===');
-            console.log('Data recebida:', data);
-            console.log('All answers:', data.all_answers);
-            console.log('Players na sala:', players);
+            //console.log('=== GAME STOPPED ===');
+            //console.log('Data recebida:', data);
+            //console.log('All answers:', data.all_answers);
+            //console.log('Players na sala:', players);
             
             gameState = 'validation';
             if (data.all_answers) {
@@ -671,16 +692,16 @@
         }
 
         function renderValidation() {
-            console.log('=== RENDERIZANDO VALIDAÇÃO ===');
-            console.log('Players:', players);
-            console.log('AllAnswers:', allAnswers);
+            //console.log('=== RENDERIZANDO VALIDAÇÃO ===');
+            //console.log('Players:', players);
+            //console.log('AllAnswers:', allAnswers);
             
             const tableRows = categories.map((cat, catIndex) => {
                 const cells = players.map(p => {
                     // Procurar respostas deste jogador
                     const playerAnswers = allAnswers.find(a => a.playerId === p.id);
                     
-                    console.log(`Procurando respostas para ${p.name} (ID: ${p.id}):`, playerAnswers);
+                    //console.log(`Procurando respostas para ${p.name} (ID: ${p.id}):`, playerAnswers);
                     
                     const answer = playerAnswers?.answers[catIndex] || '';
                     const key = `${p.id}-${catIndex}`;
@@ -967,14 +988,14 @@
         render();
     </script>
 
-    <!-- CHAT SIMPLES E FUNCIONAL -->
+    <!-- CHAT SIMPLES E FUNCIONAL 
     <div id="chat-container" style="border:1px solid #ccc; width:300px; height:300px; overflow-y:auto; padding:8px; margin-top:10px; border-radius:8px; background-color:#fafafa;">
     </div>
 
     <div style="margin-top:6px;">
     <input type="text" id="chat-input" placeholder="Digite sua mensagem..." style="width:220px; padding:4px; border-radius:4px; border:1px solid #ccc;">
     <button id="chat-send-btn" style="padding:5px 10px; background-color:#6b21a8; color:white; border:none; border-radius:4px;">Enviar</button>
-    </div>
+    </div>-->
 
     <script>
         // ⚙️ REUTILIZA O SOCKET EXISTENTE
@@ -1008,9 +1029,9 @@
                 localStorage.setItem('player_name', player_name);
             }
         }*/
-        console.log(`👤 Nome do jogador: ${player_name}`);
+        //console.log(`👤 Nome do jogador: ${player_name}`);
         // Entrar na sala via Socket.IO
-        socket.emit('join_socketio_room', { room_id, player_name });
+        socket.emit('join_socketio_room', { room_id: room_id, player_name });
     
         // Função para adicionar mensagens ao chat
         function addChatMessage(name, message, isSelf = false) {
@@ -1046,18 +1067,28 @@
         }
     
         // Botão de envio
-        document.getElementById('chat-send-btn').addEventListener('click', sendChatMessage);
-    
+        document.getElementById('chat-send-btn').addEventListener('click', sendChatMessage);    
         // Enviar com Enter
         document.getElementById('chat-input').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') sendChatMessage();
         });
-    
+
+        
         // Receber mensagens dos outros jogadores
         socket.on('chat_message_broadcast', data => {
             if (data.player_name === player_name) return;
             addChatMessage(data.player_name, data.message, false);
         });
+
+        // ABRIR E FECHAR POP-UP
+        const chatPopup = document.getElementById('chat-popup');
+        const openBtn = document.getElementById('open-chat-btn');
+        const closeBtn = document.getElementById('close-chat-btn');
+        openBtn.addEventListener('click', () => chatPopup.classList.remove('hidden'));
+        closeBtn.addEventListener('click', () => chatPopup.classList.add('hidden'));
+        
+        
+
     </script>
 </body>
 </html>
