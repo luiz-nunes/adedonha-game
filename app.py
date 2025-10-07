@@ -947,6 +947,24 @@ def get_room_players(room_id, db):
     
     return players_list
 
+@socketio.on('send_chat_message')
+def handle_chat_message(data):
+    """Recebe uma mensagem de chat de um jogador e retransmite para a sala"""
+    room_id = data.get('room_id')
+    player_name = data.get('player_name')
+    message = data.get('message')
+
+    if not room_id or not message:
+        return
+    
+    # Enviar a mensagem para todos na sala
+    emit('chat_message_broadcast', {
+        'player_name': player_name,
+        'message': message
+    }, room=room_id)
+    
+    print(f'💬 [{room_id}] {player_name}: {message}')
+
 if __name__ == '__main__':
     import socket
     port = int(os.environ.get('PORT', 5000))
