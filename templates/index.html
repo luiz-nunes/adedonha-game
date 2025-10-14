@@ -247,7 +247,6 @@
     </script>
 
     <!-- Modal de Instruções -->
-    <!-- Modal de Instruções (melhorado) -->
     <div id="how-to-play-modal"
         class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div
@@ -292,7 +291,7 @@
 
                     <li>
                     <strong>Reconexão automática:</strong> Se a página for recarregada, use o mesmo nome para que o sistema te reconheça
-                    automaticamente.
+                    automaticamente, caso crie dois jogadores com o mesmo nome, peça para o anfitrião excluir um dos dois.
                     </li>
 
                     <li>
@@ -306,8 +305,13 @@
                     </li>
 
                     <li>
-                    <strong>Validação e pontuação:</strong> O anfitrião analisa as respostas, pode invalidar palavras e
-                    depois clicar em <span class="font-semibold">"Calcular Pontuação"</span>.
+                    <strong>Validação e pontuação:</strong> O jogo converte automaticamente as palavras para maiúsculo, 
+                    para minimizar erros, invalida automaticamente palavras que não comecem pela letra sorteada ou que só possuam
+                    uma letra. Dá meio ponto para palavras iguais. O anfitrião pode analisar as respostas e dar meio ponto para 
+                    determinada resposta, caso sejam iguais mas escritas de forma diferente, por exemplo: "Enxada" e "Enchada", 
+                    ou pode invalidar palavras que possam ser consideradas como erradas, a depender do concenso entre os demais 
+                    jogadores. Depois de verificar todas as respostas basta clicar em <span class="font-semibold">"Calcular Pontuação"</span> 
+                    que o sistema irá mostrar o ranking.
                     </li>
 
                     <li>
